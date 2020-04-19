@@ -37,6 +37,8 @@ typedef struct globalState_s {
     float temperatures[SENSOR_COUNT];
     bool heaterOn;
     bool overheated;
+    uint64_t lastCycleStartMs;
+    uint64_t cycleStartMs;
 } globalState_t;
 
 globalState_t state;
@@ -136,22 +138,40 @@ void readSensors(void)
     sensorIndex = (sensorIndex + 1) % SENSOR_COUNT;
 }
 
+void changeCycle(void)
+{
+    state.lastCycleStartMs = state.cycleStartMs;
+    state.cycleStartMs = millis();
+}
+
 void updateState(void)
 {
     if (state.temperatures[SENSOR_BREW] >= OVERHEAT_LIMIT_C
         || state.temperatures[SENSOR_AMBIENT] >= OVERHEAT_LIMIT_C) {
-        state.overheated = true;
-        state.heaterOn = false;
+        if (!state.overheated) {
+            state.overheated = true;
+            state.heaterOn = false;
+            changeCycle();
+        }
     } else if (state.temperatures[SENSOR_BREW] < OVERHEAT_RESET_TEMP_C
         && state.temperatures[SENSOR_AMBIENT] < OVERHEAT_RESET_TEMP_C) {
-        state.overheated = false;
+        if (state.overheated) {
+            state.overheated = false;
+            changeCycle();
+        }
     }
 
     if (!state.overheated) {
         if (state.temperatures[SENSOR_BREW] <= BREW_TEMP_MIN_C) {
-            state.heaterOn = true;
+            if (!state.heaterOn) {
+                state.heaterOn = true;
+                changeCycle();
+            }
         } else if (state.temperatures[SENSOR_BREW] >= BREW_TEMP_MAX_C) {
-            state.heaterOn = false;
+            if (state.heaterOn) {
+                state.heaterOn = false;
+                changeCycle();
+            }
         }
     }
 }
@@ -179,17 +199,26 @@ Top row,
 
         tft.fillRect(10, 0, 310, 210, TFT_BLACK);
 
-        tft.setTextSize(3);
-        tft.setTextColor(TFT_GREEN);
+        tft.setTextColor(state.overheated ? TFT_RED : state.heaterOn ? ORANGE : TFT_GREEN);
 
+        tft.setTextSize(3);
         tft.setCursor(10, 0);
         tft.printf("B %.1f", state.temperatures[SENSOR_BREW]);
 
         tft.setCursor(10, 70);
         tft.printf("A %.1f", state.temperatures[SENSOR_AMBIENT]);
 
+        tft.setTextSize(1);
         tft.setCursor(10, 140);
         tft.print(state.overheated ? "OVER" : state.heaterOn ? "HEATER" : "");
+
+        tft.setCursor(10, 164);
+        uint32_t timeS = (millis() - state.cycleStartMs) / 1000;
+        tft.printf("Current: %d:%02d", timeS / 60, timeS);
+
+        tft.setCursor(10, 188);
+        timeS = (state.cycleStartMs - state.lastCycleStartMs) / 1000;
+        tft.printf("Last: %d:%02d", timeS / 60, timeS % 60);
     }
 }
 
