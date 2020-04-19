@@ -5,7 +5,7 @@
 #include <TFT_eSPI.h>
 #include <DS18B20.h>
 
-#define BREW_TEMP_MIN_C 25.9f
+#define BREW_TEMP_MIN_C 26.0f
 #define BREW_TEMP_MAX_C 26.1f
 
 #define OVERHEAT_LIMIT_C 40.0f
@@ -37,7 +37,8 @@ typedef struct globalState_s {
     float temperatures[SENSOR_COUNT];
     bool heaterOn;
     bool overheated;
-    uint64_t lastCycleStartMs;
+    uint32_t lastHeaterCycleS;
+    uint32_t lastOffCycleS;
     uint64_t cycleStartMs;
 } globalState_t;
 
@@ -138,40 +139,37 @@ void readSensors(void)
     sensorIndex = (sensorIndex + 1) % SENSOR_COUNT;
 }
 
-void changeCycle(void)
+void setHeater(bool heaterOn)
 {
-    state.lastCycleStartMs = state.cycleStartMs;
-    state.cycleStartMs = millis();
+    if (state.heaterOn != heaterOn) {
+        uint64_t nowMs = millis();
+        if (state.heaterOn) {
+            state.lastHeaterCycleS = (nowMs - state.cycleStartMs) / 1000;
+        } else {
+            state.lastOffCycleS = (nowMs - state.cycleStartMs) / 1000;
+        }
+        state.cycleStartMs = nowMs;
+
+        state.heaterOn = heaterOn;
+    }
 }
 
 void updateState(void)
 {
     if (state.temperatures[SENSOR_BREW] >= OVERHEAT_LIMIT_C
         || state.temperatures[SENSOR_AMBIENT] >= OVERHEAT_LIMIT_C) {
-        if (!state.overheated) {
-            state.overheated = true;
-            state.heaterOn = false;
-            changeCycle();
-        }
+        state.overheated = true;
+        setHeater(false);
     } else if (state.temperatures[SENSOR_BREW] < OVERHEAT_RESET_TEMP_C
         && state.temperatures[SENSOR_AMBIENT] < OVERHEAT_RESET_TEMP_C) {
-        if (state.overheated) {
-            state.overheated = false;
-            changeCycle();
-        }
+        state.overheated = false;
     }
 
     if (!state.overheated) {
         if (state.temperatures[SENSOR_BREW] <= BREW_TEMP_MIN_C) {
-            if (!state.heaterOn) {
-                state.heaterOn = true;
-                changeCycle();
-            }
+            setHeater(true);
         } else if (state.temperatures[SENSOR_BREW] >= BREW_TEMP_MAX_C) {
-            if (state.heaterOn) {
-                state.heaterOn = false;
-                changeCycle();
-            }
+            setHeater(false);
         }
     }
 }
@@ -203,10 +201,10 @@ Top row,
 
         tft.setTextSize(3);
         tft.setCursor(10, 0);
-        tft.printf("B %.1f", state.temperatures[SENSOR_BREW]);
+        tft.printf("B %.2f", state.temperatures[SENSOR_BREW]);
 
         tft.setCursor(10, 70);
-        tft.printf("A %.1f", state.temperatures[SENSOR_AMBIENT]);
+        tft.printf("A %.2f", state.temperatures[SENSOR_AMBIENT]);
 
         tft.setTextSize(1);
         tft.setCursor(10, 140);
@@ -214,11 +212,10 @@ Top row,
 
         tft.setCursor(10, 164);
         uint32_t timeS = (millis() - state.cycleStartMs) / 1000;
-        tft.printf("Current: %d:%02d", timeS / 60, timeS);
+        tft.printf("Current: %d:%02d", timeS / 60, timeS % 60);
 
         tft.setCursor(10, 188);
-        timeS = (state.cycleStartMs - state.lastCycleStartMs) / 1000;
-        tft.printf("Last: %d:%02d", timeS / 60, timeS % 60);
+        tft.printf("Heater: %d:%02d, Off: %d:%02d", state.lastHeaterCycleS / 60, state.lastHeaterCycleS % 60, state.lastOffCycleS / 60, state.lastOffCycleS % 60);
     }
 }
 
