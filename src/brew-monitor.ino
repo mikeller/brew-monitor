@@ -5,8 +5,8 @@
 #include <TFT_eSPI.h>
 #include <DS18B20.h>
 
-#define BREW_TEMP_MIN_C 26.0f
-#define BREW_TEMP_MAX_C 26.2f
+#define BREW_TEMP_MIN_C 28.0f
+#define BREW_TEMP_MAX_C 28.5f
 
 #define OVERHEAT_LIMIT_C 40.0f
 #define OVERHEAT_RESET_TEMP_C 30.0f
